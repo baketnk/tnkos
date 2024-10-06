@@ -1,0 +1,24 @@
+Transform the following inference code into a class that implements the ModelInterface:
+
+class ModelInterface:
+    def load_model(self) -> None:
+        pass
+
+    def unload_model(self) -> None:
+        pass
+
+    def run_inference(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        pass
+
+The class should be named after the model (e.g., PixtralModel) and should:
+1. Implement the load_model method to initialize the model and any necessary components.
+2. Implement the unload_model method to free up resources.
+3. Implement the run_inference method to perform the inference using the input_data.
+4. Use type hints and follow PEP 8 style guidelines.
+5. Handle any necessary error cases.
+
+Here's the original inference code to transform:
+
+{original_code}
+
+Please provide the transformed code that implements the ModelInterface.

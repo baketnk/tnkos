@@ -5,13 +5,17 @@ from typing import Dict, List, Union, Generator
 
 class LLM:
     DEFAULT_MODEL = os.getenv("TNKOS_MODEL", "llama3.2:3b-instruct-fp16")
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20240620"
 
+    
     OPENAI_API_URL = os.getenv("TNKOS_URL", "http://localhost:11434/v1")
-    ANTHROPIC_API_URL = "https://api.anthropic.com/v1/complete"
+    ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
     def __init__(self):
         self.prompts = {}
+        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+        self.ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
 
     def prompt_call(self, prompt_name: str, **kwargs) -> str:
         prompt = self.get_prompt(prompt_name)
@@ -27,25 +31,36 @@ class LLM:
 
     def llm_call(self, messages: List[Dict[str, str]], options: Dict = {}) -> str:
         options["stream"] = False
-        if self.DEFAULT_MODEL.startswith("gpt-"):
-            return self._openai_call(messages, options)
-        else:
+        options.setdefault("model", self.DEFAULT_ANTHROPIC_MODEL if options.get("anthropic", False) else self.DEFAULT_MODEL)
+        try:
+            del options["anthropic"]
+        except:
+            pass
+        if options["model"].startswith("claude-"): 
             return self._anthropic_call(messages, options)
+        else:
+            return self._openai_call(messages, options)
 
     def llm_stream(self, messages: List[Dict[str, str]], options: Dict = {}) -> Generator[str, None, None]:
         options["stream"] = True
-        if self.DEFAULT_MODEL.startswith("gpt-"):
-            return self._openai_stream(messages, options)
-        else:
+        options.setdefault("model", self.DEFAULT_ANTHROPIC_MODEL if options.get("anthropic", False) else self.DEFAULT_MODEL)
+        try:
+            del options["anthropic"]
+        except:
+            pass
+        if self.DEFAULT_MODEL.startswith("claude-"):
             return self._anthropic_stream(messages, options)
-
+        else:
+            return self._openai_stream(messages, options)
+    
     def _openai_call(self, messages: List[Dict[str, str]], options: Dict) -> str:
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.OPENAI_API_KEY}"
         }
+        if self.OPENAI_API_KEY:
+            headers["Authorization"] = f"Bearer {self.OPENAI_API_KEY}"
+
         data = {
-            "model": self.DEFAULT_MODEL,
             "messages": messages,
             **options
         }
@@ -57,10 +72,11 @@ class LLM:
     def _openai_stream(self, messages: List[Dict[str, str]], options: Dict) -> Generator[str, None, None]:
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.OPENAI_API_KEY}"
         }
+        if self.OPENAI_API_KEY:
+            headers["Authorization"] = f"Bearer {self.OPENAI_API_KEY}"
+
         data = {
-            "model": self.DEFAULT_MODEL,
             "messages": messages,
             "stream": True,
             **options
@@ -77,39 +93,41 @@ class LLM:
     def _anthropic_call(self, messages: List[Dict[str, str]], options: Dict) -> str:
         headers = {
             "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
             "X-API-Key": self.ANTHROPIC_API_KEY
         }
-        prompt = "\n\n".join([f"{m['role']}: {m['content']}" for m in messages])
         data = {
-            "model": self.DEFAULT_MODEL,
-            "prompt": prompt,
-            "max_tokens_to_sample": options.get("max_tokens", 1000),
+            "messages": messages,
+            "max_tokens": options.get("max_tokens", 1000),
             **options
         }
         with httpx.Client() as client:
-            response = client.post(self.ANTHROPIC_API_URL, headers=headers, json=data)
+            response = client.post(self.ANTHROPIC_API_URL, headers=headers, json=data, timeout=30.0)
             response.raise_for_status()
-            return response.json()["completion"]
+            return response.json()["content"][0]["text"]
 
     def _anthropic_stream(self, messages: List[Dict[str, str]], options: Dict) -> Generator[str, None, None]:
         headers = {
             "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
             "X-API-Key": self.ANTHROPIC_API_KEY
         }
-        prompt = "\n\n".join([f"{m['role']}: {m['content']}" for m in messages])
         data = {
-            "model": self.DEFAULT_MODEL,
-            "prompt": prompt,
-            "max_tokens_to_sample": options.get("max_tokens", 1000),
+            "messages": messages,
+            "max_tokens": options.get("max_tokens", 1000),
             "stream": True,
             **options
         }
         with httpx.Client() as client:
-            with client.stream("POST", self.ANTHROPIC_API_URL, headers=headers, json=data) as response:
+            with client.stream("POST", self.ANTHROPIC_API_URL, headers=headers, json=data, timeout=30.0) as response:
                 for line in response.iter_lines():
                     if line:
-                        json_line = json.loads(line)
-                        yield json_line["completion"]
+                        try:
+                            json_line = json.loads(line)
+                            if json_line["event"] == "content_block_delta":
+                                yield json_line["delta"]["text"]
+                        except:
+                            pass
 
     def get_prompt(self, prompt_name: str) -> str:
         if prompt_name not in self.prompts:
