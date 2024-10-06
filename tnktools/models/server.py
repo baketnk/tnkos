@@ -10,6 +10,11 @@ from typing import Any, Dict, List
 from aiohttp import web
 import time
 
+import base64
+
+from PIL import Image
+from io import BytesIO
+
 from pixtral import PixtralModel
 from interface import ModelInterface
 
@@ -59,6 +64,7 @@ def get_model_class(model_name: str) -> type:
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
+
 async def handle_inference(request):
     server = request.app['inference_server']
     try:
@@ -69,11 +75,32 @@ async def handle_inference(request):
         if not model_name or not input_data:
             return web.json_response({"error": "Both model_name and input_data are required"}, status=400)
 
+        # Handle base64 image data
+        if 'images' in input_data:
+            processed_images = []
+            for img in input_data['images']:
+                if img.startswith('data:image'):
+                    # Extract the base64 data
+                    img_data = img.split(',')[1]
+                    # Decode the base64 data
+                    img_bytes = base64.b64decode(img_data)
+                    # Open the image using PIL
+                    img_obj = Image.open(BytesIO(img_bytes))
+                    # Save the image to a temporary file
+                    temp_path = f"/tmp/temp_image_{time.time()}.png"
+                    img_obj.save(temp_path)
+                    processed_images.append(temp_path)
+                else:
+                    # If it's not base64, assume it's a file path
+                    processed_images.append(img)
+            
+            # Update the input_data with processed image paths
+            input_data['images'] = processed_images
+
         if not server.is_model_loaded(model_name):
             logger.info(f"Loading model: {model_name}")
             model_class = get_model_class(model_name)
             await server.load_model(model_name, model_class)
-
 
         logger.info(f"Running inference for model: {model_name}")
         result = await server.run_inference(model_name, input_data)

@@ -7,6 +7,14 @@ import asyncio
 import argparse
 from pathlib import Path
 from wand.image import Image as WandImage
+import base64
+import json
+INFERENCE_URL = os.getenv("TNKOS_INFERENCE_URL", "http://localhost:7997")
+
+
+def image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 async def grab_tweet(tweet_url):
     # Create screenshots folder if it doesn't exist
@@ -21,8 +29,7 @@ async def grab_tweet(tweet_url):
     
     
     # Take a screenshot of the tweet container
-    tweet_container = pyautogui.locateOnScreen('tweet_container_template.png', grayscale=True, confidence=0.15)
-    screenshot = pyautogui.screenshot(region=tweet_container)
+    screenshot = pyautogui.screenshot()
     
     # Save the screenshot temporarily
     temp_screenshot_path = screenshots_folder / f"temp_tweet_{int(time.time())}.png"
@@ -31,7 +38,7 @@ async def grab_tweet(tweet_url):
     # Process the image with ImageMagick
     with WandImage(filename=str(temp_screenshot_path)) as img:
         # Resize to a maximum width of 800 pixels while maintaining aspect ratio
-        img.transform(resize='800x')
+        img.transform(resize='1024x')
         # Enhance contrast
         img.contrast_stretch(black_point=0.15, white_point=0.85)
         # Save the processed image
@@ -46,15 +53,16 @@ async def grab_tweet(tweet_url):
         pyautogui.hotkey('command', 'w')
     else:  # Windows/Linux
         pyautogui.hotkey('ctrl', 'w')
-    
-    # Use the Pixtral model to describe the tweet
-    description = await describe_tweet_with_pixtral(str(screenshot_path))
-    
-    return description
+    return screenshot_path
 
 async def describe_tweet_with_pixtral(image_path):
     # Prepare the request to the local inference server
-    url = "http://localhost:7997/inference"
+    url = f"{INFERENCE_URL}/inference"
+    if "localhost" in url:
+        image_data = image_path
+    else:
+        image_data = f"data:image/png;base64,{image_to_base64(image_path)}"
+        
     data = {
         "model_name": "pixtral",
         "input_data": {
@@ -70,6 +78,7 @@ async def describe_tweet_with_pixtral(image_path):
             response.raise_for_status()
         
         result = response.json()
+        print(json.dumps(result))
         return result.get("output", "Failed to get a description from the model.")
     except httpx.HTTPStatusError as e:
         return f"HTTP Error: {e.response.status_code} - {e.response.text}"
