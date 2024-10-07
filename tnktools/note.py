@@ -1,6 +1,8 @@
 import argparse
+import asyncio
 import sqlite3
 import os
+import sys
 import httpx
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +10,7 @@ from typing import Optional, List
 import json
 from tnkos.llm import LLM
 
+from tnktools.grab_tweet import grab_tweet, describe_tweet_with_pixtral
 # Set up database path
 DB_PATH = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "notes.db"
 
@@ -58,9 +61,40 @@ def search_notes(query: str):
     else:
         print("No notes found.")
 
-def handle_twitter_link(url: str) -> str:
-    # This is a stub function and should be implemented to handle Twitter/X links
-    return f"Content from Twitter link: {url}"
+async def handle_twitter_link(url: str) -> str:
+    try:
+        image_path = await grab_tweet(url)
+        description_json = await describe_tweet_with_pixtral(image_path)
+        
+        # Try to parse the JSON
+        description_json = description_json.split('```json')[-1]
+        print(description_json)
+        try:
+            description = json.loads(description_json)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, try to extract JSON-like content
+            import re
+            json_match = re.search(r'\{.*\}', description_json, re.DOTALL)
+            if json_match:
+                try:
+                    print(json_match.group())
+                    description = json.loads(json_match.group()+"}")
+                except json.decoder.JSONDecodeError:
+                    return f"Failed to parse tweet content. Raw output: {description_json}"
+            else:
+                return f"Failed to extract tweet content. Raw output: {description_json}"
+        
+        # Format the description into a note
+        note_content = f"Tweet from {description.get('user_handle', 'Unknown User')}:\n\n"
+        note_content += f"Content: {description.get('post_content', 'No content')}\n\n"
+        if description.get('image_description'):
+            note_content += f"Image: {description['image_description']}\n\n"
+        note_content += f"Original URL: {url}"
+        
+        return note_content
+    except Exception as e:
+        return f"Error processing tweet: {str(e)}"
+
 
 def fetch_and_distill_url(url: str) -> str:
     try:
@@ -71,7 +105,7 @@ def fetch_and_distill_url(url: str) -> str:
     except httpx.RequestError:
         return f"Failed to fetch content from {url}"
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(description="CLI Note Management App")
     parser.add_argument("action", choices=["add", "remove", "search"], help="Action to perform")
     parser.add_argument("content", nargs="?", help="Note content or search query")
@@ -87,14 +121,22 @@ def main():
         if args.action == "add":
             if args.url:
                 if "twitter.com" in args.url or "x.com" in args.url:
-                    content = handle_twitter_link(args.url)
+                    print("twitter")
+                    content = await handle_twitter_link(args.url)
                 else:
                     content = fetch_and_distill_url(args.url)
                 add_note(content, args.url)
             elif args.content:
                 add_note(args.content)
             else:
-                print("Error: Please provide content or a URL to add a note.")
+                # Read from stdin if no content is provided
+                print("Enter your note (press Ctrl+D when finished):")
+                content = sys.stdin.read().strip()
+                if content:
+                    add_note(content)
+                else:
+                    print("Error: No content provided.")
+
         elif args.action == "remove":
             if args.id:
                 remove_note(args.id)
@@ -109,9 +151,8 @@ def main():
         print(f"An error occurred with the database: {e}")
     except httpx.RequestError as e:
         print(f"An error occurred while fetching the URL: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main=main())
+
       

@@ -20,7 +20,7 @@ class PixtralModel(ModelInterface):
     def __init__(self):
         self.model = None
         self.processor = None
-        self.model_id = "mistral-community/pixtral-12b"
+        self.model_id = "DewEfresh/pixtral-12b-8bit"
         if torch.backends.mps.is_available():
             self.device = "mps"
         elif torch.cuda.is_available():
@@ -32,7 +32,8 @@ class PixtralModel(ModelInterface):
     def load_model(self) -> None:
         try:
             model_path = os.path.expanduser("~/models/pixtral-12b")
-            self.model = LlavaForConditionalGeneration.from_pretrained(self.model_id, cache_dir=model_path).to(self.device)
+            # self.model = LlavaForConditionalGeneration.from_pretrained(self.model_id, cache_dir=model_path).to(self.device)
+            self.model = LlavaForConditionalGeneration.from_pretrained(self.model_id, cache_dir=model_path)
             self.processor = AutoProcessor.from_pretrained(self.model_id, cache_dir=model_path)
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {str(e)}")

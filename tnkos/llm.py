@@ -65,7 +65,7 @@ class LLM:
             **options
         }
         with httpx.Client() as client:
-            response = client.post(self.OPENAI_API_URL, headers=headers, json=data)
+            response = client.post(self.OPENAI_API_URL+"/chat/completions", headers=headers, json=data)
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
 
@@ -82,7 +82,7 @@ class LLM:
             **options
         }
         with httpx.Client() as client:
-            with client.stream("POST", self.OPENAI_API_URL, headers=headers, json=data) as response:
+            with client.stream("POST", self.OPENAI_API_URL+"/chat/completions", headers=headers, json=data) as response:
                 for line in response.iter_lines():
                     if line.startswith("data: "):
                         json_line = json.loads(line[6:])

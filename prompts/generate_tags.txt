@@ -1,0 +1,12 @@
+Given the following note content, generate a list of 3-5 relevant tags. 
+The tags should capture the main themes, topics, or key elements of the note.
+Avoid overly generic tags. If the note appears to be a task or includes a due date, include an appropriate tag like "task" or "deadline".
+
+Return the tags as a JSON array of strings. For example:
+```json
+["work", "project", "deadline"]
+```
+Note content:
+{content}
+
+Tags (JSON array):

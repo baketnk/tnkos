@@ -37,8 +37,18 @@ async def grab_tweet(tweet_url):
     
     # Process the image with ImageMagick
     with WandImage(filename=str(temp_screenshot_path)) as img:
-        # Resize to a maximum width of 800 pixels while maintaining aspect ratio
-        img.transform(resize='1024x')
+        # Get original dimensions
+        width, height = img.size
+        
+        # Calculate crop dimensions
+        crop_width = width*2 // 5  # Middle third of width
+        crop_height = int(height * 2 / 3)  # Top 2/3rds of height
+        left = (width - crop_width) // 2
+        top = 0
+        
+        # Crop the image
+        img.crop(left=left, top=top, width=crop_width, height=crop_height)
+
         # Enhance contrast
         img.contrast_stretch(black_point=0.15, white_point=0.85)
         # Save the processed image
@@ -58,6 +68,7 @@ async def grab_tweet(tweet_url):
 async def describe_tweet_with_pixtral(image_path):
     # Prepare the request to the local inference server
     url = f"{INFERENCE_URL}/inference"
+    print(f"url={url}")
     if "localhost" in url:
         image_data = image_path
     else:
@@ -66,8 +77,14 @@ async def describe_tweet_with_pixtral(image_path):
     data = {
         "model_name": "pixtral",
         "input_data": {
-            "images": [image_path],
-            "prompt": "Describe the tweet in the center of this image. Ignore menus, tabs, and other non-centered content."
+            "images": [image_data],
+            "prompt": """Describe the post in this format: ```json
+{
+  user_handle: string, 
+  post_content: string, 
+  image_description: string|null
+}``` 
+No yapping, just output the requested JSON format and *only* the requested format."""
         }
     }
     
@@ -84,7 +101,8 @@ async def describe_tweet_with_pixtral(image_path):
         return f"HTTP Error: {e.response.status_code} - {e.response.text}"
 
 async def main(tweet_url):
-    description = await grab_tweet(tweet_url)
+    image_path = await grab_tweet(tweet_url)
+    description = await describe_tweet_with_pixtral(image_path)
     print(description)
 
 if __name__ == "__main__":
