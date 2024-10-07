@@ -1,18 +1,38 @@
 import argparse
 import asyncio
 import sqlite3
+import json
 import os
+import re
 import sys
 import httpx
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
-import json
-from tnkos.llm import LLM
 
+from bs4 import BeautifulSoup
+
+from tnkos.llm import LLM
 from tnktools.grab_tweet import grab_tweet, describe_tweet_with_pixtral
+from tnktools.llmjson import parse_llm_json
 # Set up database path
 DB_PATH = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "notes.db"
+
+def adapt_date_iso(val):
+    """Adapt datetime.date to ISO 8601 date."""
+    return val.isoformat()
+
+def adapt_datetime_iso(val):
+    """Adapt datetime.datetime to timezone-naive ISO 8601 date."""
+    return val.isoformat()
+
+def adapt_datetime_epoch(val):
+    """Adapt datetime.datetime to Unix timestamp."""
+    return int(val.timestamp())
+
+
+sqlite3.register_adapter(datetime, adapt_datetime_iso)
+sqlite3.register_adapter(datetime, adapt_datetime_epoch)
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -30,7 +50,7 @@ def init_db():
 def add_note(content: str, url: Optional[str] = None):
     llm = LLM()
     tags = llm.prompt_call("generate_tags", content=content)
-    tags = json.loads(tags)  # Assuming the LLM returns a JSON string of tags
+    tags = parse_llm_json(tags)  # Assuming the LLM returns a JSON string of tags
     
     should_have_due_date = llm.prompt_call("should_have_due_date", content=content)
     due_at = datetime.now() if should_have_due_date.lower() == "true" else None
@@ -66,23 +86,9 @@ async def handle_twitter_link(url: str) -> str:
         image_path = await grab_tweet(url)
         description_json = await describe_tweet_with_pixtral(image_path)
         
-        # Try to parse the JSON
-        description_json = description_json.split('```json')[-1]
-        print(description_json)
-        try:
-            description = json.loads(description_json)
-        except json.JSONDecodeError:
-            # If JSON parsing fails, try to extract JSON-like content
-            import re
-            json_match = re.search(r'\{.*\}', description_json, re.DOTALL)
-            if json_match:
-                try:
-                    print(json_match.group())
-                    description = json.loads(json_match.group()+"}")
-                except json.decoder.JSONDecodeError:
-                    return f"Failed to parse tweet content. Raw output: {description_json}"
-            else:
-                return f"Failed to extract tweet content. Raw output: {description_json}"
+        description = parse_llm_json(description_json)
+        if description is None:
+            return f"Failed to parse tweet content. Raw output: {description_json}"
         
         # Format the description into a note
         note_content = f"Tweet from {description.get('user_handle', 'Unknown User')}:\n\n"
@@ -99,15 +105,41 @@ async def handle_twitter_link(url: str) -> str:
 def fetch_and_distill_url(url: str) -> str:
     try:
         response = httpx.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        
+        # Parse the HTML content
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract the text content from the body
+        body = soup.find('body')
+        if body:
+            # Remove script and style elements
+            for script in body(["script", "style"]):
+                script.decompose()
+            
+            # Get text content
+            text_content = body.get_text(separator='\n', strip=True)
+        else:
+            text_content = soup.get_text(separator='\n', strip=True)
+        
+        # Truncate the content if it's too long (adjust the limit as needed)
+        max_chars = 10000  # Adjust this value based on your LLM's token limit
+        if len(text_content) > max_chars:
+            text_content = text_content[:max_chars] + "..."
+        
         llm = LLM()
-        distilled_content = llm.prompt_call("distill_content", content=response.text)
+        distilled_content = llm.prompt_call("distill_content", content=text_content)
         return distilled_content
-    except httpx.RequestError:
-        return f"Failed to fetch content from {url}"
+    except httpx.HTTPStatusError as e:
+        return f"HTTP Error: {e.response.status_code} - {e.response.text}"
+    except httpx.RequestError as e:
+        return f"Request Error: Failed to fetch content from {url} - {str(e)}"
+    except Exception as e:
+        return f"Unexpected error when processing {url}: {str(e)}"
 
 async def main():
     parser = argparse.ArgumentParser(description="CLI Note Management App")
-    parser.add_argument("action", choices=["add", "remove", "search"], help="Action to perform")
+    parser.add_argument("action", choices=["add", "remove", "rm", "search"], help="Action to perform")
     parser.add_argument("content", nargs="?", help="Note content or search query")
     parser.add_argument("--id", type=int, help="Note ID for removal")
     parser.add_argument("--url", help="URL to fetch content from")
@@ -137,7 +169,7 @@ async def main():
                 else:
                     print("Error: No content provided.")
 
-        elif args.action == "remove":
+        elif args.action == "remove" or args.action == "rm":
             if args.id:
                 remove_note(args.id)
             else:

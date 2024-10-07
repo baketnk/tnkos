@@ -103,7 +103,13 @@ async def handle_inference(request):
             await server.load_model(model_name, model_class)
 
         logger.info(f"Running inference for model: {model_name}")
+
+        start_time = time.time()
         result = await server.run_inference(model_name, input_data)
+        end_time = time.time()
+        total_time = end_time - start_time
+        logger.info(f"Total inference time: {total_time:.4f} seconds")
+
         logger.info(f"Inference result: {result}")
         return web.json_response(result)
     except ValueError as e:
