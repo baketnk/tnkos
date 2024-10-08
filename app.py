@@ -1,49 +1,38 @@
-import urwid
-from datetime import datetime
+# app.py
 
-class TerminalApp:
-    def __init__(self):
-        self.output_widget = urwid.ListBox(urwid.SimpleFocusListWalker([]))
-        self.suggestion_widget = urwid.Text("")
-        self.input_widget = urwid.Edit("> ")
-        self.command_counter = 0
+from textual.app import App
+from textual.widgets import Header, Footer
+from tnkos.shell_widget import ShellWidget
+from textual import log
+from textual.binding import Binding
+class ShellApp(App):
+    """A Textual app for a LLM-enhanced shell wrapper with syntax highlighting."""
 
-        layout = urwid.Pile([
-            ('weight', 70, self.output_widget),
-            ('pack', urwid.LineBox(urwid.BoxAdapter(urwid.Filler(self.suggestion_widget), 6))),
-            ('pack', self.input_widget)
-        ])
+    CSS = """
+    ShellWidget {
+        height: 100%;
+    }
+    """
 
-        self.loop = urwid.MainLoop(layout, unhandled_input=self.handle_input)
-        self.loop.widget.focus_position = 2
+    BINDINGS = [
+        ("ctrl+d", "quit", "Quit"),
+        Binding("ctrl+e", "explain_command", "Explain Command", priority=True)
+    ]
 
-    def prefix(self):
-        self.command_counter += 1
-        return f"{datetime.now().isoformat()}[{self.command_counter}]$"
 
-    def handle_input(self, key):
-        if key == 'enter':
-            self.process_input(self.input_widget.edit_text)
+    def compose(self):
+        yield ShellWidget()
+        yield Footer()
 
-    def process_input(self, text):
-        # Add input to output area
-        self.output_widget.body.append(urwid.Text(f"{self.prefix()} {text}"))
-        
-        # Clear input field
-        self.input_widget.edit_text = ""
+    def on_mount(self):
+        self.query_one(ShellWidget).focus()
 
-        # Process command (simple echo for this example)
-        self.output_widget.body.append(urwid.Text(f"You entered: {text}"))
+    def action_explain_command(self):
+        """Trigger command explanation in ShellWidget."""
+        log.debug("app triggered exlain")
+        self.query_one(ShellWidget).action_explain_command()
 
-        # Update suggestion area (simple example)
-        self.suggestion_widget.set_text(f"Suggestion: Try entering 'hello' or 'quit'")
-
-        # Scroll to bottom of output
-        self.output_widget.focus_position = len(self.output_widget.body) - 1
-
-    def run(self):
-        self.loop.run()
 
 if __name__ == "__main__":
-    app = TerminalApp()
+    app = ShellApp()
     app.run()

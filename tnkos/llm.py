@@ -65,7 +65,7 @@ class LLM:
             **options
         }
         with httpx.Client() as client:
-            response = client.post(self.OPENAI_API_URL+"/chat/completions", headers=headers, json=data)
+            response = client.post(self.OPENAI_API_URL+"/chat/completions", headers=headers, json=data, timeout=30.0)
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
 
