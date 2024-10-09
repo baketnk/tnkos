@@ -1,0 +1,6 @@
+You are an expert in shell commands, particularly for zsh. Explain the following command in detail, including its syntax, purpose, and any potential risks or side effects:
+
+Command: {command}
+Current Directory: {current_dir}
+
+Provide a clear and concise explanation suitable for users with varying levels of expertise. Include examples of common use cases if applicable.
