@@ -1,0 +1,11 @@
+You are a helpful assistant tasked with determining if a note should have a due date. Analyze the following note content and respond with "true" if the note should have a due date, or "false" if it should not. Base your decision on these criteria:
+
+1. The note contains explicit mentions of deadlines, future dates, or time-sensitive information.
+2. The content describes a task or action item that needs to be completed by a specific time.
+3. The note implies a sense of urgency or time-bound importance.
+4. The information would benefit from being revisited or acted upon at a future date.
+
+Respond only with "true" or "false". Do not include any other text in your response.
+
+Note content:
+{content}
